@@ -1,0 +1,186 @@
+# Project configuration defining the project name, version, and description for identification and documentation.
+project:
+  name: "breast_cancer_coexpression"
+  version: "1.0.0"
+  description: "Differential co-expression analysis of TCGA-BRCA data"
+
+# Paths configuration specifying directory locations relative to the project root, using placeholders resolved at runtime.
+paths:
+  project_root: "[project_root]"              # Placeholder, resolved at runtime
+  data_dir: "[project_root]/data"            # Relative to project_root, where raw data resides
+  raw_data: "[project_root]/data/files"      # Relative to project_root, specific directory for raw TSV files
+  sample_sheet: "[project_root]/data/gdc_sample_sheet*.tsv"  # Glob pattern with placeholder, matches sample sheet files
+  
+  # Script-specific output directories to be used as INPUT for downstream scripts
+  analysis_raw: "[project_root]/output/00_a_analyse_raw_data"  # from 00_a
+  preprocessed: "[project_root]/output/00_b_data_preprocess"  # from 00_b
+  genes_info: "[project_root]/output/00_c_gene_info" # from 00_c
+
+  correlation_matrices: "[project_root]/output/01_a_build_correlation_matrices"  # from 01_a
+  networks: "[project_root]/output/01_b_network_analysis"  # from 01_b
+
+  differential_analysis: "[project_root]/output/02_a_differential_analysis"  # from 02_a
+  dcea_viz_enrich: "[project_root]/output/02_b_dcea_viz_enrich"  # from 02_b
+  sample_classification: "[project_root]/output/02_c_sample_classification"  # from 02_c 
+
+  hub_analysis: "[project_root]/output/03_a_enhanced_hub_analysis"  # from 03_a 
+  functional_characterization: "[project_root]/output/03_b_functional_characterization"  # Input for 03_c viz from 03_b
+
+# Visualization configuration for gene-enhanced plots
+visualization:
+  use_gene_info: true  # Toggle gene info integration (requires 00_c run)
+  gene_fetch_limit: 200  # Max genes to fetch per batch for efficiency
+  top_k_for_labels: 10  # Top-K genes for community/hub labels
+
+# Parameters for network construction and differential analysis
+network_analysis:
+  # Add a list of methods to compute.
+  correlation_methods: ["spearman", "pearson"]
+  # Keep a primary method for downstream scripts to use by default.
+  primary_correlation_method: "spearman" 
+  # Set multiple thresholds for sensitivity analysis
+  # The lower threshold captures more edges but may include noise
+  # The higher threshold focuses on stronger correlations but may miss subtle effects
+  correlation_thresholds: [0.6, 0.7, 0.8] 
+  primary_threshold: 0.7
+
+  # NEW: Statistical testing configuration
+  # Number of permutations for empirical p-value estimation (50 balances accuracy vs computation time)
+  # Set to 0 to use Fisher Z transformation only (faster but assumes normality)
+  # # Set to 50 only for small gene sets (<1000 genes)
+  permutation_n: 0
+  # Use Fisher Z as fallback when permutations fail or timeout (ensures analysis completes)
+  fisher_z_fallback: true
+  # Minimum absolute correlation difference to be considered biologically relevant
+  # 0.6 captures strong but plausible changes (1.0 was too strict for biological data)
+  min_effect_size: 0.8
+  # Adjusted p-value (FDR) threshold for statistical significance
+  fdr_threshold: 0.05
+
+  # NEW: Performance optimization for large-scale analysis
+  optimization:
+    # Maximum number of genes to use in permutation tests (reduces 13,384→5000 for feasibility)
+    max_genes_for_permutations: 5000
+    # Number of parallel workers for permutation testing (4 balances speed vs memory usage)
+    parallel_workers: 4
+    # Size of data chunks for processing (prevents memory overflow)
+    chunk_size: 500
+    # Random seed for reproducible permutations
+    seed: 42
+
+  # NEW: Fisher Z transformation safety settings
+  fisher_z:
+    # Clip correlation values to prevent numerical errors in arctanh calculation
+    correlation_clip: 0.9999
+    # Minimum sample size required for valid Fisher Z test
+    min_sample_size: 10
+    # Handle edge cases (perfect correlations, small samples, zeros)
+    handle_edge_cases: true
+
+# Parameters for hub gene identification and enrichment
+hub_analysis:
+  # Weights for combined scoring of hubs
+  # Balances feature importance from classification and network disruption (delta connectivity)
+  # Calculate hybrid score: score = (importance × weight) + (delta × weight) + (centrality × weight).
+  use_classification_features: true  # Toggle to use 02_c results
+  feature_importance_weight: 0.6     # Weight for feature importance in hybrid scoring
+  delta_connectivity_weight: 0.4     # Weight for network metric in hybrid scoring
+
+  # ensemble related
+  feature_importance_files:
+    primary: 'classification_feature_importance.tsv'
+    fallbacks:
+      - 'feature_importance_ensemble_mean.tsv'
+      - 'classification_feature_importance_original.tsv'
+      - 'feature_importance_rf.tsv'
+      - 'feature_importance_xgb.tsv'
+
+  # Number of top hubs to select for enrichment analysis in 03_b
+  top_hubs_count: 250
+  enrichment_databases: ["KEGG_2021_Human", "GO_Biological_Process_2023", "Reactome_2022"]
+  adj_pvalue_cutoff: 0.05
+  combined_score_cutoff: 2
+  
+  # Enhanced scoring params
+  positive_delta_weight: 0.3
+  cancer_bonus_multiplier: 1.5
+  
+  # GSEA params
+  gsea_permutations: 1000
+  gsea_fdr_threshold: 0.05
+  gsea_gene_sets: ["MSigDB_Hallmark_2020", "GO_Biological_Process_2023", "Reactome_2022"]
+  gsea_top_genes: 500  # Limit for performance
+
+# Classification configuration
+# Note: This script now uses REAL TCGA-BRCA data exclusively (no synthetic data option)
+classification:
+  # Data source: Always uses real TCGA-BRCA expression matrices from 00_b preprocessing
+  # Method: Median-based selection to create balanced dataset
+  #   - Selects 100 tumor samples closest to median profile (representative samples)
+  #   - Combines with all available normal samples (~113 samples)
+  #   - Addresses class imbalance (~1100 tumor vs ~113 normal)
+  use_real_data: true  # Required to be true (legacy flag, kept for documentation)
+  
+  # Feature selection: Top N genes ranked by delta_connectivity from 02_b
+  # These are the most disrupted hub genes in the co-expression network
+  top_n_features: 100
+  
+  # Sample selection strategy
+  n_tumor_samples_select: 113  # n_tumor_samples_select, Number of representative tumor samples to select set to same as normal
+
+  # Random Forest parameters
+  n_estimators: 500
+  random_state: 42
+  test_size: 0.3
+  cv_folds: 5
+
+
+# USED BY 00_preprocess_data.py
+# Preprocessing configuration defining gene filtering and matrix formatting rules.
+preprocessing:
+  gene_filters:
+    # Filters to keep only specified gene types, e.g., protein-coding genes for focused analysis.
+    keep_gene_types: ["protein_coding"]
+    # Patterns to remove specific gene prefixes, e.g., non-standard or pseudoautosomal regions.
+    remove_patterns: ["^N_", "^PAR_"]
+    # Expression threshold (TPM > 1.0) to filter out low-expression genes, ensuring biological relevance.
+    expression_threshold: 1.0
+    # Minimum percentage (50%) of samples a gene must be expressed in to be kept, balancing data density and noise.
+    min_sample_percentage: 0.5
+  matrix_format:
+    # Prefix for tumor sample IDs in the output matrix (e.g., "t0001").
+    sample_prefix_tumor: "t"
+    # Prefix for normal sample IDs in the output matrix (e.g., "n0001").
+    sample_prefix_normal: "n"
+    # Number of digits for padding sample IDs (e.g., 4 for "t0001" to "t1118").
+    sample_digits: 4
+    # Identifier field for genes in the matrix (e.g., "gene_key" as "gene_id|gene_name").
+    gene_identifier: "gene_key"
+  parallel_processing:
+    # Number of CPU cores to use (-1 uses all available cores).
+    n_jobs: -1
+    # Size of data chunks for parallel processing of samples.
+    chunk_size: 50
+    # Size of TPM data chunks for efficient memory handling.
+    tpm_chunk_size: 1000
+
+# USED BY 00_a_analyse_raw_data.py
+# Analysis raw configuration for initial data processing parameters.
+analysis_raw:
+  # Size of data chunks for raw analysis processing.
+  chunk_size: 25
+  # Size of TPM data chunks for raw analysis.
+  tpm_chunk_size: 1000
+  # Number of worker processes for parallel raw analysis.
+  pool_size: 8
+
+# Logging configuration for output and level settings.
+logging:
+  # Logging level (INFO for standard output, can be DEBUG for more detail).
+  level: "INFO"
+  # Format string for log entries including timestamp, name, level, and message.
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  # Path to the log file, using placeholder resolved at runtime.
+  file_log: "[project_root]/output/00_b_preprocessed/logs/preprocessing.log"
+  # Enable console logging alongside file logging.
+  console_log: true
