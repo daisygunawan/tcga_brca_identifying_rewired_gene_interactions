@@ -1,0 +1,66 @@
+check python version:
+python --version
+
+
+IMPORTANT: if your python > 3.12 it might not be compatible with gseapy, to set 3.12 local (in venv), do:
+
+brew install pyenv
+[run below in terminal]
+echo 'if which pyenv > /dev/null; then eval "$(pyenv init --path)"; fi' >> ~/.zshrc
+source ~/.zshrc
+echo 'if which pyenv > /dev/null; then eval "$(pyenv init -)"; fi' >> ~/.bash_profile
+source ~/.bash_profile
+pyenv install 3.12
+
+[cd to project dir, set Python 3.12 as the local version]
+pyenv local 3.12
+
+# -----------------------------------------------
+# cretae local env (first time only before installing libs)
+python -m venv venv
+
+source venv/bin/activate
+
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install --upgrade gseapy --prefer-binary
+
+
+# Install libomp via Homebrew (for xgboost on macOS)
+# brew install libomp
+
+
+pip list
+
+
+# -----------------------------------------------
+# run script in order (to make sure every one successfully executed, also to conserve resources)
+python 00_a_analyse_raw_data.py                
+python 00_b_data_preprocess.py                 
+python 00_c_gene_info.py                       
+python 00_d_refresh_gene_classification.py   (OPTIONAL, rerun if tagging algo changed in utils/genes.py)
+
+python 01_a_build_correlation_matrices.py      
+python 01_b_network_analysis.py                
+python 01_c_network_visualization.py           
+
+python 02_a_differential_analysis.py           
+python 02_b_dcea_viz_enrich.py
+python 02_c_sample_classification.py
+
+python 03_a_enhanced_hub_analysis.py
+python 03_b_functional_characterization.py
+
+
+
+deactivate
+
+=======================
+
+temp notes 
+
+cd ..
+head -10 output/00_b_data_preprocess/matrices/tumor_matrix.tsv > example_00_b_tumor_matrix.tsv
+head -10 output/00_b_data_preprocess/matrices/normal_matrix.tsv > example_00_b_normal_matrix.tsv
+head -20 output/00_b_data_preprocess/metadata/gene_metadata.json > example_00_b_gene_metadata.json
+head -50 output/02_b_dcea_viz_enrich/annotated_hubs.json > example_02_b_annottated_hubs.json
